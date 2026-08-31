@@ -3,7 +3,7 @@ param (
     [string]$Mode = "screen", # screen | region | window
     [string]$SavePath = "",
     [switch]$CopyToClipboard,
-    [int]$DelayMs = 250,
+    [int]$DelayMs = 0,
     [string]$ShowMagnifier = "true"
 )
 
@@ -54,8 +54,22 @@ public class NativeCapture {
     [DllImport("user32.dll")]
     public static extern bool SetProcessDPIAware();
 
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool BringWindowToTop(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
     public static readonly IntPtr DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = (IntPtr)(-4);
+    public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+    public const uint SWP_SHOWWINDOW = 0x0040;
+    public const uint SWP_NOMOVE = 0x0002;
+    public const uint SWP_NOSIZE = 0x0001;
     public const int SRCCOPY = 0x00CC0020;
+    public const int CAPTUREBLT = 0x40000000;
     public const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
     public const uint GW_HWNDNEXT = 2;
 
@@ -80,13 +94,24 @@ public class NativeCapture {
         }
     }
 
+    public static void ForceForeground(IntPtr hWnd) {
+        try {
+            SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_SHOWWINDOW | SWP_NOMOVE | SWP_NOSIZE);
+            SetForegroundWindow(hWnd);
+            BringWindowToTop(hWnd);
+        } catch {}
+    }
+
     public static Bitmap CaptureBounds(Rectangle bounds) {
         EnableDpiAwareness();
         IntPtr hdcScreen = GetDC(IntPtr.Zero);
         Bitmap bmp = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppArgb);
         using (Graphics g = Graphics.FromImage(bmp)) {
             IntPtr hdcBmp = g.GetHdc();
-            BitBlt(hdcBmp, 0, 0, bounds.Width, bounds.Height, hdcScreen, bounds.X, bounds.Y, SRCCOPY);
+            bool ok = BitBlt(hdcBmp, 0, 0, bounds.Width, bounds.Height, hdcScreen, bounds.X, bounds.Y, SRCCOPY | CAPTUREBLT);
+            if (!ok) {
+                BitBlt(hdcBmp, 0, 0, bounds.Width, bounds.Height, hdcScreen, bounds.X, bounds.Y, SRCCOPY);
+            }
             g.ReleaseHdc(hdcBmp);
         }
         ReleaseDC(IntPtr.Zero, hdcScreen);
@@ -139,17 +164,36 @@ public class NativeCapture {
 public class RegionSelectionForm : Form {
     private Bitmap fullScreenBmp;
     private Point startPoint;
+    private Point currentMousePoint = Point.Empty;
     private Rectangle selectionRect;
     private bool isSelecting = false;
+    private bool showMagnifier = true;
     public Bitmap CroppedResult { get; private set; }
     public bool IsCancelled { get; private set; }
 
-    public RegionSelectionForm(Bitmap desktopImage) {
+    protected override CreateParams CreateParams {
+        get {
+            CreateParams cp = base.CreateParams;
+            cp.ExStyle |= 0x00000080; // WS_EX_TOOLWINDOW
+            cp.ExStyle |= 0x00000008; // WS_EX_TOPMOST
+            return cp;
+        }
+    }
+
+    public RegionSelectionForm(Bitmap desktopImage, bool showMagnifier = true) {
         NativeCapture.EnableDpiAwareness();
         this.fullScreenBmp = desktopImage;
+        this.showMagnifier = showMagnifier;
         this.IsCancelled = true;
         Rectangle vBounds = SystemInformation.VirtualScreen;
 
+        this.SetStyle(
+            ControlStyles.AllPaintingInWmPaint |
+            ControlStyles.UserPaint |
+            ControlStyles.OptimizedDoubleBuffer |
+            ControlStyles.Opaque,
+            true
+        );
         this.StartPosition = FormStartPosition.Manual;
         this.Location = vBounds.Location;
         this.Size = vBounds.Size;
@@ -165,6 +209,11 @@ public class RegionSelectionForm : Form {
         this.MouseUp += OnMouseUp;
         this.KeyDown += OnKeyDown;
         this.Paint += OnPaint;
+    }
+
+    protected override void OnShown(EventArgs e) {
+        base.OnShown(e);
+        NativeCapture.ForceForeground(this.Handle);
     }
 
     private void OnKeyDown(object sender, KeyEventArgs e) {
@@ -189,14 +238,15 @@ public class RegionSelectionForm : Form {
     }
 
     private void OnMouseMove(object sender, MouseEventArgs e) {
+        currentMousePoint = e.Location;
         if (isSelecting) {
             int x = Math.Min(startPoint.X, e.X);
             int y = Math.Min(startPoint.Y, e.Y);
             int w = Math.Abs(startPoint.X - e.X);
             int h = Math.Abs(startPoint.Y - e.Y);
             selectionRect = new Rectangle(x, y, w, h);
-            this.Invalidate();
         }
+        this.Invalidate();
     }
 
     private void OnMouseUp(object sender, MouseEventArgs e) {
@@ -243,27 +293,117 @@ public class RegionSelectionForm : Form {
                 e.Graphics.DrawRectangle(borderPen, selectionRect);
             }
         }
+
+        if (showMagnifier && !isSelecting) {
+            DrawMagnifier(e.Graphics, currentMousePoint, this.Width, this.Height);
+        }
+    }
+
+    private void DrawMagnifier(Graphics g, Point cursorPt, int formWidth, int formHeight) {
+        if (fullScreenBmp == null || cursorPt.IsEmpty || cursorPt.X < 0 || cursorPt.Y < 0) return;
+
+        int zoom = 4;
+        int sampleSize = 25;
+        int halfSample = sampleSize / 2;
+        int magSize = sampleSize * zoom; // 100x100
+
+        int magX = cursorPt.X + 22;
+        int magY = cursorPt.Y + 22;
+
+        if (magX + magSize + 10 > formWidth) magX = cursorPt.X - magSize - 22;
+        if (magY + magSize + 10 > formHeight) magY = cursorPt.Y - magSize - 22;
+        if (magX < 10) magX = 10;
+        if (magY < 10) magY = 10;
+
+        int srcX = cursorPt.X - halfSample;
+        int srcY = cursorPt.Y - halfSample;
+
+        Rectangle srcRect = new Rectangle(srcX, srcY, sampleSize, sampleSize);
+        Rectangle destRect = new Rectangle(magX, magY, magSize, magSize);
+
+        g.InterpolationMode = InterpolationMode.NearestNeighbor;
+        g.PixelOffsetMode = PixelOffsetMode.Half;
+
+        using (GraphicsPath clipPath = new GraphicsPath()) {
+            int radius = 8;
+            clipPath.AddArc(magX, magY, radius * 2, radius * 2, 180, 90);
+            clipPath.AddArc(magX + magSize - radius * 2, magY, radius * 2, radius * 2, 270, 90);
+            clipPath.AddArc(magX + magSize - radius * 2, magY + magSize - radius * 2, radius * 2, radius * 2, 0, 90);
+            clipPath.AddArc(magX, magY + magSize - radius * 2, radius * 2, radius * 2, 90, 90);
+            clipPath.CloseFigure();
+
+            GraphicsState state = g.Save();
+            g.SetClip(clipPath);
+
+            using (SolidBrush bg = new SolidBrush(Color.FromArgb(24, 24, 28))) {
+                g.FillRectangle(bg, destRect);
+            }
+
+            Rectangle clampedSrc = Rectangle.Intersect(new Rectangle(0, 0, fullScreenBmp.Width, fullScreenBmp.Height), srcRect);
+            if (clampedSrc.Width > 0 && clampedSrc.Height > 0) {
+                int offX = clampedSrc.X - srcRect.X;
+                int offY = clampedSrc.Y - srcRect.Y;
+                Rectangle partialDest = new Rectangle(
+                    magX + offX * zoom,
+                    magY + offY * zoom,
+                    clampedSrc.Width * zoom,
+                    clampedSrc.Height * zoom
+                );
+                g.DrawImage(fullScreenBmp, partialDest, clampedSrc, GraphicsUnit.Pixel);
+            }
+
+            // Crosshairs
+            int centerBoxX = magX + halfSample * zoom;
+            int centerBoxY = magY + halfSample * zoom;
+
+            using (Pen guidePen = new Pen(Color.FromArgb(200, 0, 150, 255), 1.5f)) {
+                g.DrawLine(guidePen, magX + magSize / 2, magY, magX + magSize / 2, magY + magSize);
+                g.DrawLine(guidePen, magX, magY + magSize / 2, magX + magSize, magY + magSize / 2);
+            }
+
+            using (Pen centerBoxPen = new Pen(Color.FromArgb(255, 255, 60, 60), 1.5f)) {
+                g.DrawRectangle(centerBoxPen, centerBoxX, centerBoxY, zoom, zoom);
+            }
+
+            g.Restore(state);
+
+            using (Pen border = new Pen(Color.FromArgb(255, 255, 255, 255), 1.5f)) {
+                g.DrawPath(border, clipPath);
+            }
+        }
     }
 }
 
 public class WindowSelectionForm : Form {
     private Bitmap fullScreenBmp;
     private List<NativeCapture.WindowEntry> windowList;
-    private int selectedIndex = -1;
+    private NativeCapture.WindowEntry selectedWindow = null;
     public Bitmap CroppedResult { get; private set; }
     public bool IsCancelled { get; private set; }
+
+    protected override CreateParams CreateParams {
+        get {
+            CreateParams cp = base.CreateParams;
+            cp.ExStyle |= 0x00000080; // WS_EX_TOOLWINDOW
+            cp.ExStyle |= 0x00000008; // WS_EX_TOPMOST
+            return cp;
+        }
+    }
 
     public WindowSelectionForm(Bitmap desktopImage) {
         NativeCapture.EnableDpiAwareness();
         this.fullScreenBmp = desktopImage;
         this.IsCancelled = true;
+        this.windowList = NativeCapture.GetVisibleWindowsList();
         Rectangle vBounds = SystemInformation.VirtualScreen;
 
-        this.windowList = NativeCapture.GetVisibleWindowsList();
-        if (this.windowList.Count > 0) {
-            this.selectedIndex = 0; // Pre-select foreground active window
-        }
-
+        this.SetStyle(
+            ControlStyles.AllPaintingInWmPaint |
+            ControlStyles.UserPaint |
+            ControlStyles.OptimizedDoubleBuffer |
+            ControlStyles.Opaque,
+            true
+        );
         this.StartPosition = FormStartPosition.Manual;
         this.Location = vBounds.Location;
         this.Size = vBounds.Size;
@@ -280,6 +420,11 @@ public class WindowSelectionForm : Form {
         this.Paint += OnPaint;
     }
 
+    protected override void OnShown(EventArgs e) {
+        base.OnShown(e);
+        NativeCapture.ForceForeground(this.Handle);
+    }
+
     private void OnKeyDown(object sender, KeyEventArgs e) {
         if (e.KeyCode == Keys.Escape) {
             IsCancelled = true;
@@ -288,37 +433,16 @@ public class WindowSelectionForm : Form {
         }
     }
 
-    private void OnMouseMove(object sender, MouseEventArgs e) {
-        Rectangle vBounds = SystemInformation.VirtualScreen;
-        Point screenPt = new Point(vBounds.X + e.X, vBounds.Y + e.Y);
-
-        int newIndex = -1;
-        for (int i = 0; i < windowList.Count; i++) {
-            if (windowList[i].Bounds.Contains(screenPt)) {
-                newIndex = i;
-                break;
-            }
-        }
-
-        if (newIndex != selectedIndex) {
-            selectedIndex = newIndex;
-            this.Invalidate();
-        }
-    }
-
     private void OnMouseDown(object sender, MouseEventArgs e) {
-        if (e.Button == MouseButtons.Left) {
+        if (e.Button == MouseButtons.Left && selectedWindow != null) {
             Rectangle vBounds = SystemInformation.VirtualScreen;
-            Rectangle cropRect = Rectangle.Empty;
+            Rectangle rawB = selectedWindow.Bounds;
+            Rectangle localTargetRect = new Rectangle(rawB.X - vBounds.X, rawB.Y - vBounds.Y, rawB.Width, rawB.Height);
 
-            if (selectedIndex >= 0 && selectedIndex < windowList.Count) {
-                Rectangle rawB = windowList[selectedIndex].Bounds;
-                cropRect = new Rectangle(rawB.X - vBounds.X, rawB.Y - vBounds.Y, rawB.Width, rawB.Height);
-            } else {
-                cropRect = new Rectangle(0, 0, fullScreenBmp.Width, fullScreenBmp.Height);
-            }
-
-            cropRect = Rectangle.Intersect(new Rectangle(0, 0, fullScreenBmp.Width, fullScreenBmp.Height), cropRect);
+            Rectangle cropRect = Rectangle.Intersect(
+                new Rectangle(0, 0, fullScreenBmp.Width, fullScreenBmp.Height),
+                localTargetRect
+            );
 
             if (cropRect.Width > 0 && cropRect.Height > 0) {
                 CroppedResult = fullScreenBmp.Clone(cropRect, fullScreenBmp.PixelFormat);
@@ -336,17 +460,30 @@ public class WindowSelectionForm : Form {
         }
     }
 
+    private void OnMouseMove(object sender, MouseEventArgs e) {
+        Point screenPt = Cursor.Position;
+        NativeCapture.WindowEntry found = null;
+        foreach (NativeCapture.WindowEntry w in windowList) {
+            if (w.Bounds.Contains(screenPt)) {
+                found = w;
+                break;
+            }
+        }
+
+        if (found != selectedWindow) {
+            selectedWindow = found;
+            this.Invalidate();
+        }
+    }
+
     private void OnPaint(object sender, PaintEventArgs e) {
         e.Graphics.DrawImage(fullScreenBmp, 0, 0, this.Width, this.Height);
         Rectangle vBounds = SystemInformation.VirtualScreen;
-
         Rectangle localTargetRect = Rectangle.Empty;
-        string titleText = "Click to capture window | ESC to cancel";
 
-        if (selectedIndex >= 0 && selectedIndex < windowList.Count) {
-            Rectangle rawB = windowList[selectedIndex].Bounds;
+        if (selectedWindow != null) {
+            Rectangle rawB = selectedWindow.Bounds;
             localTargetRect = new Rectangle(rawB.X - vBounds.X, rawB.Y - vBounds.Y, rawB.Width, rawB.Height);
-            titleText = string.Format("Window: {0} ({1} × {2} px)", windowList[selectedIndex].Title, rawB.Width, rawB.Height);
         }
 
         using (GraphicsPath path = new GraphicsPath()) {
@@ -378,7 +515,8 @@ try {
 
     if ($Mode -eq "region") {
         $desktopBmp = [NativeCapture]::CaptureBounds([NativeCapture]::GetVirtualScreenBounds())
-        $form = New-Object RegionSelectionForm($desktopBmp)
+        $magBool = ($ShowMagnifier -eq "true")
+        $form = New-Object RegionSelectionForm($desktopBmp, $magBool)
         $res = $form.ShowDialog()
 
         if ($form.IsCancelled -or $form.CroppedResult -eq $null) {
