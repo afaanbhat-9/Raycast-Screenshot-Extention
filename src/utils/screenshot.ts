@@ -287,8 +287,8 @@ export async function captureScreenshot(mode: CaptureMode, options?: CaptureOpti
 
   const psArgs = [
     '-NoProfile',
-    '-NonInteractive',
     '-NoLogo',
+    '-STA',
     '-ExecutionPolicy',
     'Bypass',
     '-File',
@@ -312,7 +312,7 @@ export async function captureScreenshot(mode: CaptureMode, options?: CaptureOpti
   }
 
   try {
-    const { stdout } = await execFileAsync('powershell.exe', psArgs, { windowsHide: true });
+    const { stdout } = await execFileAsync('powershell.exe', psArgs, { windowsHide: false });
     const output = stdout.trim();
 
     if (output === 'CANCELLED') {
