@@ -3,7 +3,8 @@ param (
     [string]$Mode = "screen", # screen | region | window
     [string]$SavePath = "",
     [switch]$CopyToClipboard,
-    [int]$DelayMs = 250
+    [int]$DelayMs = 250,
+    [string]$ShowMagnifier = "true"
 )
 
 Add-Type -ReferencedAssemblies System.Drawing, System.Windows.Forms -TypeDefinition @"
