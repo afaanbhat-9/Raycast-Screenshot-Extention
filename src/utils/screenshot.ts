@@ -264,49 +264,52 @@ export async function captureScreenshot(mode: CaptureMode, options?: CaptureOpti
         success: false,
         error: `Unexpected output from capture engine: ${output || '(empty)'}`,
       };
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      return {
-        success: false,
-        error: `Failed to launch ${exePath}: ${errorMsg}`,
-      };
+    } catch {
+      // Direct executable blocked or failed, fall back to PowerShell script seamlessly
     }
   }
 
-  const dllPath = getDllPath();
-  if (!fs.existsSync(dllPath)) {
+  const scriptCandidates = [
+    environment.assetsPath ? path.join(environment.assetsPath, 'scripts', 'capture.ps1') : '',
+    path.join(process.cwd(), 'assets', 'scripts', 'capture.ps1'),
+    path.join(__dirname, '..', 'assets', 'scripts', 'capture.ps1'),
+    path.join(__dirname, '..', '..', 'assets', 'scripts', 'capture.ps1'),
+  ];
+
+  const actualScriptPath = scriptCandidates.find((p) => p && fs.existsSync(p));
+
+  if (!actualScriptPath) {
     return {
       success: false,
-      error: `Neither capture.exe (${exePath || 'not found'}) nor CaptureEngine.dll (${dllPath}) exists on disk.`,
+      error: `Could not locate capture script (capture.ps1) on disk.`,
     };
   }
 
-  const psCommandParts: string[] = [
-    `[System.Reflection.Assembly]::LoadFrom('${dllPath.replace(/'/g, "''")}') | Out-Null;`,
-    `$myArgs = @('-Mode', '${mode}', '-DelayMs', '0', '-ShowMagnifier', '${isMagnifierEnabled ? 'true' : 'false'}');`,
-  ];
-
-  if (shouldSave) {
-    const rawSaveLocation = options?.overrideSavePath || preferences.saveLocation;
-    const saveDir = resolveSaveDirectory(rawSaveLocation);
-    psCommandParts.push(`$myArgs += @('-SavePath', '${saveDir.replace(/'/g, "''")}');`);
-  }
-
-  if (shouldCopy) {
-    psCommandParts.push(`$myArgs += @('-CopyToClipboard');`);
-  }
-
-  psCommandParts.push(`[Program]::Main($myArgs)`);
-
-  const psArgs: string[] = [
+  const psArgs = [
     '-NoProfile',
     '-NonInteractive',
     '-NoLogo',
     '-ExecutionPolicy',
     'Bypass',
-    '-Command',
-    psCommandParts.join(' '),
+    '-File',
+    actualScriptPath,
+    '-Mode',
+    mode,
+    '-DelayMs',
+    '0',
+    '-ShowMagnifier',
+    isMagnifierEnabled ? 'true' : 'false',
   ];
+
+  if (shouldSave) {
+    const rawSaveLocation = options?.overrideSavePath || preferences.saveLocation;
+    const saveDir = resolveSaveDirectory(rawSaveLocation);
+    psArgs.push('-SavePath', saveDir);
+  }
+
+  if (shouldCopy) {
+    psArgs.push('-CopyToClipboard');
+  }
 
   try {
     const { stdout } = await execFileAsync('powershell.exe', psArgs, { windowsHide: true });
@@ -325,15 +328,13 @@ export async function captureScreenshot(mode: CaptureMode, options?: CaptureOpti
 
     return {
       success: false,
-      error: output.startsWith('ERROR|')
-        ? output.replace('ERROR|', '')
-        : `PowerShell capture error: ${output || '(empty)'}`,
+      error: output.startsWith('ERROR|') ? output.replace('ERROR|', '') : `Capture error: ${output || '(empty)'}`,
     };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     return {
       success: false,
-      error: `PowerShell execution failed: ${errorMsg}`,
+      error: `Execution failed: ${errorMsg}`,
     };
   }
 }
