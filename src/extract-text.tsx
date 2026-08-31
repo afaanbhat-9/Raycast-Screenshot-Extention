@@ -1,6 +1,7 @@
 import {
   Form,
   List,
+  Detail,
   ActionPanel,
   Action,
   showToast,
@@ -73,46 +74,50 @@ export default function Command() {
 
   // STATE 2: CHOOSE / DISPLAY EXISTING IMAGE
   if (step === 'CHOOSE_FILE') {
-    const hasFile = Boolean(selectedFile);
+    if (selectedFile) {
+      return (
+        <Detail
+          isLoading={isLoading}
+          markdown={`### 🖼️ Selected Image: \`${fileName}\`\n\n**Full Path:** \`${selectedFile}\`\n\n---\n\n👉 **Press \`Enter\` to extract text from this image.**`}
+          actions={
+            <ActionPanel>
+              <Action title="Extract Text from Image" icon={Icon.Check} onAction={() => performOcr(selectedFile)} />
+              <Action
+                title="Choose Different Image"
+                icon={Icon.Image}
+                shortcut={{ modifiers: ['cmd'], key: 'r' }}
+                onAction={handleRemoveImage}
+              />
+              <Action
+                title="Back to Options"
+                icon={Icon.ArrowLeft}
+                shortcut={{ modifiers: ['cmd'], key: '[' }}
+                onAction={() => {
+                  setSelectedFile(null);
+                  setStep('MENU');
+                }}
+              />
+            </ActionPanel>
+          }
+        />
+      );
+    }
 
     return (
       <Form
         isLoading={isLoading}
         actions={
           <ActionPanel>
-            {hasFile ? (
-              <>
-                <Action title="Extract Text from Image" icon={Icon.Check} onAction={() => performOcr(selectedFile!)} />
-                <Action
-                  title="Remove Image"
-                  icon={Icon.Trash}
-                  shortcut={{ modifiers: ['cmd'], key: 'd' }}
-                  onAction={handleRemoveImage}
-                />
-                <Action
-                  title="Back to Options"
-                  icon={Icon.ArrowLeft}
-                  shortcut={{ modifiers: ['cmd'], key: '[' }}
-                  onAction={() => {
-                    setSelectedFile(null);
-                    setStep('MENU');
-                  }}
-                />
-              </>
-            ) : (
-              <>
-                <Action title="Select Image File Above" onAction={() => {}} />
-                <Action
-                  title="Back to Options"
-                  icon={Icon.ArrowLeft}
-                  shortcut={{ modifiers: ['cmd'], key: '[' }}
-                  onAction={() => {
-                    setSelectedFile(null);
-                    setStep('MENU');
-                  }}
-                />
-              </>
-            )}
+            <Action title="Select Image File Above" onAction={() => {}} />
+            <Action
+              title="Back to Options"
+              icon={Icon.ArrowLeft}
+              shortcut={{ modifiers: ['cmd'], key: '[' }}
+              onAction={() => {
+                setSelectedFile(null);
+                setStep('MENU');
+              }}
+            />
           </ActionPanel>
         }
       >
@@ -122,29 +127,15 @@ export default function Command() {
           allowMultipleSelection={false}
           canChooseDirectories={false}
           canChooseFiles={true}
-          value={selectedFile ? [selectedFile] : []}
+          value={[]}
           onChange={(files) => {
             if (files && files.length > 0) {
               setSelectedFile(files[0]);
-            } else {
-              setSelectedFile(null);
             }
           }}
         />
-        {hasFile ? (
-          <Form.Description
-            text={
-              isLoading
-                ? '⏳ Extracting text using native Windows OCR...'
-                : `📁 Selected Image: ${fileName}\n\nFull Path: ${selectedFile}\n\nPress Enter to extract text from this image.`
-            }
-          />
-        ) : (
-          <>
-            <Form.Description text="Click 'Select Image File' above to choose an image file from your computer." />
-            <Form.Description text="Supported formats: PNG, JPG, JPEG, BMP, WebP" />
-          </>
-        )}
+        <Form.Description text="Click 'Select File' above with your mouse to choose an image from your computer." />
+        <Form.Description text="Supported formats: PNG, JPG, JPEG, BMP, WebP" />
       </Form>
     );
   }
