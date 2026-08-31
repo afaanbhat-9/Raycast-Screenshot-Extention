@@ -231,7 +231,7 @@ export async function captureScreenshot(mode: CaptureMode, options?: CaptureOpti
     appArgs.push('-CopyToClipboard');
   }
 
-  const isMagnifierEnabled = preferences.showMagnifier !== false;
+  const isMagnifierEnabled = preferences.showMagnifier === true;
   appArgs.push('-ShowMagnifier', isMagnifierEnabled ? 'true' : 'false');
 
   const exePath = getExePath();
