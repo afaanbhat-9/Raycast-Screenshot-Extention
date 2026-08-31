@@ -20,39 +20,68 @@ export function getOcrExePath(): string | null {
   if (cachedOcrExePath && fs.existsSync(cachedOcrExePath)) {
     return cachedOcrExePath;
   }
-  cachedOcrExePath = null;
 
-  const candidates: (string | undefined)[] = [
-    environment.assetsPath ? path.join(environment.assetsPath, 'bin', 'ocr.exe') : undefined,
-    path.join(process.cwd(), 'assets', 'bin', 'ocr.exe'),
-    path.join(__dirname, '..', 'assets', 'bin', 'ocr.exe'),
-    path.join(__dirname, '..', '..', 'assets', 'bin', 'ocr.exe'),
-    path.join(__dirname, 'assets', 'bin', 'ocr.exe'),
-  ];
-
-  for (const candidate of candidates) {
-    if (candidate && fs.existsSync(candidate)) {
-      cachedOcrExePath = candidate;
-      return candidate;
+  if (environment.assetsPath) {
+    const assetExe = path.join(environment.assetsPath, 'bin', 'ocr.exe');
+    if (fs.existsSync(assetExe)) {
+      cachedOcrExePath = assetExe;
+      return assetExe;
     }
+  }
+
+  const cwdExe = path.join(process.cwd(), 'assets', 'bin', 'ocr.exe');
+  if (fs.existsSync(cwdExe)) {
+    cachedOcrExePath = cwdExe;
+    return cwdExe;
+  }
+
+  const candidate1 = path.join(__dirname, '..', 'assets', 'bin', 'ocr.exe');
+  if (fs.existsSync(candidate1)) {
+    cachedOcrExePath = candidate1;
+    return candidate1;
+  }
+
+  const candidate2 = path.join(__dirname, '..', '..', 'assets', 'bin', 'ocr.exe');
+  if (fs.existsSync(candidate2)) {
+    cachedOcrExePath = candidate2;
+    return candidate2;
+  }
+
+  const absoluteFallback = 'c:\\Coding\\MyProjects\\Raycast Screenshot Extention\\assets\\bin\\ocr.exe';
+  if (fs.existsSync(absoluteFallback)) {
+    cachedOcrExePath = absoluteFallback;
+    return absoluteFallback;
   }
 
   return null;
 }
 
 export function getOcrScriptPath(): string | null {
-  const candidates: (string | undefined)[] = [
-    environment.assetsPath ? path.join(environment.assetsPath, 'scripts', 'ocr.ps1') : undefined,
-    path.join(process.cwd(), 'assets', 'scripts', 'ocr.ps1'),
-    path.join(__dirname, '..', 'assets', 'scripts', 'ocr.ps1'),
-    path.join(__dirname, '..', '..', 'assets', 'scripts', 'ocr.ps1'),
-    path.join(__dirname, 'assets', 'scripts', 'ocr.ps1'),
-  ];
-
-  for (const candidate of candidates) {
-    if (candidate && fs.existsSync(candidate)) {
-      return candidate;
+  if (environment.assetsPath) {
+    const assetScript = path.join(environment.assetsPath, 'scripts', 'ocr.ps1');
+    if (fs.existsSync(assetScript)) {
+      return assetScript;
     }
+  }
+
+  const cwdScript = path.join(process.cwd(), 'assets', 'scripts', 'ocr.ps1');
+  if (fs.existsSync(cwdScript)) {
+    return cwdScript;
+  }
+
+  const candidate1 = path.join(__dirname, '..', 'assets', 'scripts', 'ocr.ps1');
+  if (fs.existsSync(candidate1)) {
+    return candidate1;
+  }
+
+  const candidate2 = path.join(__dirname, '..', '..', 'assets', 'scripts', 'ocr.ps1');
+  if (fs.existsSync(candidate2)) {
+    return candidate2;
+  }
+
+  const absoluteFallback = 'c:\\Coding\\MyProjects\\Raycast Screenshot Extention\\assets\\scripts\\ocr.ps1';
+  if (fs.existsSync(absoluteFallback)) {
+    return absoluteFallback;
   }
 
   return null;
