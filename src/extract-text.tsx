@@ -82,16 +82,7 @@ export default function Command() {
           <ActionPanel>
             {hasFile ? (
               <>
-                <Action.SubmitForm
-                  title="Extract Text from Image"
-                  icon={Icon.Check}
-                  onSubmit={(values: { files?: string[] }) => {
-                    const target = (values.files && values.files[0]) || selectedFile;
-                    if (target) {
-                      performOcr(target);
-                    }
-                  }}
-                />
+                <Action title="Extract Text from Image" icon={Icon.Check} onAction={() => performOcr(selectedFile!)} />
                 <Action
                   title="Remove Image"
                   icon={Icon.Trash}
