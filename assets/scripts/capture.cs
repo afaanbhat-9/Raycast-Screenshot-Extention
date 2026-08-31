@@ -604,61 +604,18 @@ public class NativeCapture {
 
     public static Bitmap CaptureBounds(Rectangle bounds) {
         EnableDpiAwareness();
-        IntPtr hWndDesktop = GetDesktopWindow();
-        IntPtr hdcScreen = GetWindowDC(hWndDesktop);
-        bool isDesktopDC = true;
-
-        if (hdcScreen == IntPtr.Zero) {
-            hdcScreen = GetDC(IntPtr.Zero);
-            isDesktopDC = false;
+        IntPtr hdcScreen = GetDC(IntPtr.Zero);
+        Bitmap bmp = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppArgb);
+        using (Graphics g = Graphics.FromImage(bmp)) {
+            IntPtr hdcBmp = g.GetHdc();
+            bool ok = BitBlt(hdcBmp, 0, 0, bounds.Width, bounds.Height, hdcScreen, bounds.X, bounds.Y, SRCCOPY | CAPTUREBLT);
+            if (!ok) {
+                BitBlt(hdcBmp, 0, 0, bounds.Width, bounds.Height, hdcScreen, bounds.X, bounds.Y, SRCCOPY);
+            }
+            g.ReleaseHdc(hdcBmp);
         }
-
-        if (hdcScreen == IntPtr.Zero) {
-            int err = Marshal.GetLastWin32Error();
-            throw new Exception("GDI Capture Error: Unable to acquire Desktop Device Context via GetWindowDC or GetDC (Win32Error=" + err + ")");
-        }
-
-        try {
-            IntPtr hdcMem = CreateCompatibleDC(hdcScreen);
-            if (hdcMem == IntPtr.Zero) {
-                int err = Marshal.GetLastWin32Error();
-                throw new Exception("GDI Capture Error: CreateCompatibleDC failed (Win32Error=" + err + ")");
-            }
-
-            IntPtr hBmp = CreateCompatibleBitmap(hdcScreen, bounds.Width, bounds.Height);
-            if (hBmp == IntPtr.Zero) {
-                int err = Marshal.GetLastWin32Error();
-                DeleteDC(hdcMem);
-                throw new Exception("GDI Capture Error: CreateCompatibleBitmap failed for bounds " + bounds.Width + "x" + bounds.Height + " (Win32Error=" + err + ")");
-            }
-
-            IntPtr hOld = SelectObject(hdcMem, hBmp);
-
-            bool bltOk = BitBlt(hdcMem, 0, 0, bounds.Width, bounds.Height, hdcScreen, bounds.X, bounds.Y, SRCCOPY | CAPTUREBLT);
-            if (!bltOk) {
-                int err1 = Marshal.GetLastWin32Error();
-                bltOk = BitBlt(hdcMem, 0, 0, bounds.Width, bounds.Height, hdcScreen, bounds.X, bounds.Y, SRCCOPY);
-                if (!bltOk) {
-                    int err2 = Marshal.GetLastWin32Error();
-                    SelectObject(hdcMem, hOld);
-                    DeleteObject(hBmp);
-                    DeleteDC(hdcMem);
-                    throw new Exception("GDI Capture Error: Native BitBlt failed for bounds " + bounds.Width + "x" + bounds.Height + " at (" + bounds.X + "," + bounds.Y + ") (SRCCOPY|CAPTUREBLT Win32Error=" + err1 + ", SRCCOPY Win32Error=" + err2 + ")");
-                }
-            }
-
-            Bitmap resultBmp = Image.FromHbitmap(hBmp);
-            SelectObject(hdcMem, hOld);
-            DeleteObject(hBmp);
-            DeleteDC(hdcMem);
-            return resultBmp;
-        } finally {
-            if (isDesktopDC) {
-                ReleaseDC(hWndDesktop, hdcScreen);
-            } else {
-                ReleaseDC(IntPtr.Zero, hdcScreen);
-            }
-        }
+        ReleaseDC(IntPtr.Zero, hdcScreen);
+        return bmp;
     }
 
     public static Bitmap CaptureSpecificWindow(IntPtr hWnd, Rectangle bounds) {
