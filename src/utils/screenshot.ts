@@ -231,10 +231,8 @@ export async function captureScreenshot(mode: CaptureMode, options?: CaptureOpti
     appArgs.push('-CopyToClipboard');
   }
 
-  const showMagnifier = preferences.showMagnifier !== false;
-  if (!showMagnifier) {
-    appArgs.push('-ShowMagnifier', 'false');
-  }
+  const isMagnifierEnabled = preferences.showMagnifier !== false;
+  appArgs.push('-ShowMagnifier', isMagnifierEnabled ? 'true' : 'false');
 
   const exePath = getExePath();
 
@@ -285,7 +283,7 @@ export async function captureScreenshot(mode: CaptureMode, options?: CaptureOpti
 
   const psCommandParts: string[] = [
     `[System.Reflection.Assembly]::LoadFrom('${dllPath.replace(/'/g, "''")}') | Out-Null;`,
-    `$myArgs = @('-Mode', '${mode}', '-DelayMs', '0');`,
+    `$myArgs = @('-Mode', '${mode}', '-DelayMs', '0', '-ShowMagnifier', '${isMagnifierEnabled ? 'true' : 'false'}');`,
   ];
 
   if (shouldSave) {
