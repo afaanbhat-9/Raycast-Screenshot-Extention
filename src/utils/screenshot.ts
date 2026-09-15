@@ -7,12 +7,6 @@ import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
 
-export interface Preferences {
-  output?: 'save-and-copy' | 'save' | 'copy';
-  saveLocation?: string;
-  showMagnifier?: boolean;
-}
-
 export type CaptureMode = 'screen' | 'region' | 'window';
 
 let cachedExePath: string | null = null;

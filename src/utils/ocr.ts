@@ -191,7 +191,7 @@ export async function processImageOcr(imagePath: string): Promise<OcrResult> {
 export async function captureAndExtractText(
   mode: CaptureMode = 'region',
 ): Promise<OcrResult & { cancelled?: boolean }> {
-  const preferences = getPreferenceValues<{ output?: string }>();
+  const preferences = getPreferenceValues<Preferences>();
   const outputMode = preferences.output || 'save-and-copy';
   const isCopyOnly = outputMode === 'copy';
 
